@@ -11,3 +11,4 @@ class ExamplePlugin: Plugin() {
         registerMainAPI(YanHH3DProvider())
     }
 }
+
