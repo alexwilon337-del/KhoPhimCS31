@@ -9,7 +9,7 @@ buildscript {
     }
 
     dependencies {
-        classpath("com.android.tools.build:gradle:8.7.2")
+        classpath("com.android.tools.build:gradle:8.7.3")
         classpath("com.github.recloudstream:gradle:-SNAPSHOT")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.0")
     }
@@ -23,9 +23,11 @@ allprojects {
     }
 }
 
-fun Project.cloudstream(configuration: CloudstreamExtension.() -> Unit) = extensions.getByName<CloudstreamExtension>("cloudstream").configuration()
+fun Project.cloudstream(configuration: CloudstreamExtension.() -> Unit) =
+    extensions.getByName<CloudstreamExtension>("cloudstream").configuration()
 
-fun Project.android(configuration: BaseExtension.() -> Unit) = extensions.getByName<BaseExtension>("android").configuration()
+fun Project.android(configuration: BaseExtension.() -> Unit) =
+    extensions.getByName<BaseExtension>("android").configuration()
 
 subprojects {
     apply(plugin = "com.android.library")
@@ -46,8 +48,8 @@ subprojects {
         }
 
         compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+            sourceCompatibility = JavaVersion.VERSION_11
+            targetCompatibility = JavaVersion.VERSION_11
         }
 
         tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
@@ -64,7 +66,7 @@ subprojects {
     }
 
     dependencies {
-        val cloudstream = configurations.maybeCreate("cloudstream")
+        val cloudstream by configurations
         val implementation by configurations
 
         cloudstream("com.lagradost:cloudstream3:pre-release")
