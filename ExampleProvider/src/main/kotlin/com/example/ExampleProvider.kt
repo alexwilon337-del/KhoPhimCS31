@@ -5,12 +5,10 @@ import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
 import com.lagradost.cloudstream3.utils.AppUtils.parseJson
 import com.lagradost.cloudstream3.utils.AppUtils.toJson
+import com.lagradost.cloudstream3.utils.loadExtractor
 import org.jsoup.nodes.Element
 import java.net.URLEncoder
 
-// ============================================================================
-// KHO PHIM 1: NGUONC.COM
-// ============================================================================
 class NguonCProvider : MainAPI() {
     override var mainUrl = "https://phim.nguonc.com"
     override var name = "NguonC"
@@ -168,9 +166,6 @@ class NguonCProvider : MainAPI() {
     )
 }
 
-// ============================================================================
-// KHO PHIM 2: YANHH3D.CHAT
-// ============================================================================
 class YanHH3DProvider : MainAPI() {
     override var mainUrl = "https://yanhh3d.chat"
     override var name = "YanHH3D"
@@ -186,32 +181,40 @@ class YanHH3DProvider : MainAPI() {
         "$mainUrl/the-loai/xuyen-khong?page=" to "Xuyên Không"
     )
 
+    private fun fixLink(url: String?): String? {
+        if (url.isNullOrBlank()) return null
+        return when {
+            url.startsWith("http") -> url
+            url.startsWith("//") -> "https:$url"
+            url.startsWith("/") -> "$mainUrl$url"
+            else -> "$mainUrl/$url"
+        }
+    }
+
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val document = app.get(request.data + page).document
         val items = document.select("article, .halim-item, .movie-item, .film-item, .item")
-            .mapNotNull { it.toSearchResult() }
+            .mapNotNull { element -> parseSearchItem(element) }
             .distinctBy { it.url }
         return newHomePageResponse(request.name, items)
     }
 
-    private fun Element.toSearchResult(): SearchResponse? {
-        val linkElement = this.selectFirst("a[href]") ?: return null
-        val href = fixUrlNull(linkElement.attr("href")) ?: return null
+    private fun parseSearchItem(element: Element): SearchResponse? {
+        val linkElement = element.selectFirst("a[href]") ?: return null
+        val href = fixLink(linkElement.attr("href")) ?: return null
         if (href.contains("/the-loai/") || href.contains("/moi-cap-nhat")) return null
 
-        val title = this.selectFirst(".entry-title, .title, .film-name, h2, h3")?.text()?.trim()
-            ?: linkElement.attr("title").trim()
-            .ifBlank { linkElement.text().trim() }
+        val title = element.selectFirst(".entry-title, .title, .film-name, h2, h3")?.text()?.trim()
+            ?: linkElement.attr("title").trim().ifBlank { linkElement.text().trim() }
         if (title.isBlank()) return null
 
-        val imgElement = this.selectFirst("img")
-        val posterUrl = fixUrlNull(
-            imgElement?.attr("data-src")?.ifBlank { null }
-                ?: imgElement?.attr("data-lazy-src")?.ifBlank { null }
-                ?: imgElement?.attr("src")
-        )
+        val imgElement = element.selectFirst("img")
+        val rawPoster = imgElement?.attr("data-src")?.ifBlank { null }
+            ?: imgElement?.attr("data-lazy-src")?.ifBlank { null }
+            ?: imgElement?.attr("src")
+        val posterUrl = fixLink(rawPoster)
 
-        val epText = this.selectFirst(".episode, .status, .halim-episode, .ep")?.text()?.trim()
+        val epText = element.selectFirst(".episode, .status, .halim-episode, .ep")?.text()?.trim()
 
         return newAnimeSearchResponse(title, href, TvType.Anime) {
             this.posterUrl = posterUrl
@@ -223,7 +226,7 @@ class YanHH3DProvider : MainAPI() {
         val encodedQuery = URLEncoder.encode(query, "UTF-8")
         val document = app.get("$mainUrl/tim-kiem?keyword=$encodedQuery").document
         return document.select("article, .halim-item, .movie-item, .film-item, .item")
-            .mapNotNull { it.toSearchResult() }
+            .mapNotNull { element -> parseSearchItem(element) }
             .distinctBy { it.url }
     }
 
@@ -234,10 +237,9 @@ class YanHH3DProvider : MainAPI() {
             ?: document.selectFirst("meta[property=og:title]")?.attr("content")?.substringBefore(" - ")
             ?: return null
 
-        val poster = fixUrlNull(
-            document.selectFirst("meta[property=og:image]")?.attr("content")
-                ?: document.selectFirst(".movie-poster img, .poster img, .halim-movie-poster img")?.attr("src")
-        )
+        val rawPoster = document.selectFirst("meta[property=og:image]")?.attr("content")
+            ?: document.selectFirst(".movie-poster img, .poster img, .halim-movie-poster img")?.attr("src")
+        val poster = fixLink(rawPoster)
 
         val description = document.selectFirst(".entry-content, .film-description, .desc, meta[property=og:description]")
             ?.let { if (it.tagName() == "meta") it.attr("content") else it.text() }
@@ -246,8 +248,8 @@ class YanHH3DProvider : MainAPI() {
         var epElements = document.select(".halim-list-eps a, #list-episodes a, .list-episode a, .episodes a")
 
         if (epElements.isEmpty()) {
-            val watchUrl = document.selectFirst("a:contains(Xem Thuyết Minh), a:contains(Xem Vietsub), a:contains(Xem Phim), a.btn-watch")
-                ?.attr("href")?.let { fixUrlNull(it) }
+            val watchHref = document.selectFirst("a:contains(Xem Thuyết Minh), a:contains(Xem Vietsub), a:contains(Xem Phim), a.btn-watch")?.attr("href")
+            val watchUrl = fixLink(watchHref)
             if (watchUrl != null && watchUrl != url) {
                 val watchDoc = app.get(watchUrl).document
                 epElements = watchDoc.select(".halim-list-eps a, #list-episodes a, .list-episode a, .episodes a")
@@ -255,7 +257,7 @@ class YanHH3DProvider : MainAPI() {
         }
 
         val episodes = epElements.mapNotNull { ep ->
-            val epHref = fixUrlNull(ep.attr("href")) ?: return@mapNotNull null
+            val epHref = fixLink(ep.attr("href")) ?: return@mapNotNull null
             val epName = ep.text().trim().ifBlank { "Full" }
             newEpisode(epHref) {
                 this.name = if (epName.lowercase().contains("tập")) epName else "Tập $epName"
@@ -304,7 +306,7 @@ class YanHH3DProvider : MainAPI() {
 
         val iframes = document.select("iframe[src]")
         for (iframe in iframes) {
-            val iframeSrc = fixUrlNull(iframe.attr("src"))
+            val iframeSrc = fixLink(iframe.attr("src"))
             if (!iframeSrc.isNullOrBlank()) {
                 loadExtractor(iframeSrc, "$mainUrl/", subtitleCallback, callback)
             }
