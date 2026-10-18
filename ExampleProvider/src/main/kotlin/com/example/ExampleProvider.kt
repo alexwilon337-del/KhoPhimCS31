@@ -2,7 +2,6 @@ package com.example
 
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.*
-import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
 import com.lagradost.cloudstream3.utils.*
 import com.lagradost.cloudstream3.utils.AppUtils.parseJson
 import com.lagradost.cloudstream3.utils.AppUtils.toJson
@@ -16,6 +15,30 @@ class ExampleProvider : MainAPI() {
     override val hasMainPage = true
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries, TvType.Anime)
 
+    // ---------- Đổi tên miền nhanh ----------
+    // Plugin tự đọc file domains.json trên GitHub của bạn (mục "nguonc").
+    // Khi trang đổi tên miền, chỉ cần sửa file đó, KHÔNG cần build lại plugin.
+    private val domainConfigUrl =
+        "https://raw.githubusercontent.com/alexwilon337-del/KhoPhimCS31/master/domains.json"
+    private val domainConfigKey = "nguonc"
+    private var lastDomainCheck = 0L
+
+    private suspend fun ensureDomain() {
+        val now = System.currentTimeMillis()
+        if (lastDomainCheck != 0L && now - lastDomainCheck < 10 * 60 * 1000L) return
+        try {
+            val cfg = app.get("$domainConfigUrl?t=$now", timeout = 10L)
+                .parsedSafe<Map<String, String>>()
+            val d = cfg?.get(domainConfigKey)?.trim()?.trimEnd('/')
+            if (!d.isNullOrBlank() && d.startsWith("http")) {
+                mainUrl = d
+                lastDomainCheck = now
+            }
+        } catch (e: Exception) {
+            // Không đọc được thì dùng tên miền hiện tại
+        }
+    }
+
     private val api get() = "$mainUrl/api"
     private val apiHeaders get() = mapOf(
         "Accept" to "application/json",
@@ -23,20 +46,24 @@ class ExampleProvider : MainAPI() {
     )
 
     override val mainPage = mainPageOf(
-        "$mainUrl/api/films/phim-moi-cap-nhat" to "Phim mới cập nhật",
-        "$mainUrl/api/films/danh-sach/phim-dang-chieu" to "Phim đang chiếu",
-        "$mainUrl/api/films/danh-sach/phim-le" to "Phim lẻ",
-        "$mainUrl/api/films/danh-sach/phim-bo" to "Phim bộ",
-        "$mainUrl/api/films/danh-sach/tv-shows" to "TV Shows",
-        "$mainUrl/api/films/quoc-gia/han-quoc" to "Hàn Quốc",
-        "$mainUrl/api/films/quoc-gia/trung-quoc" to "Trung Quốc",
-        "$mainUrl/api/films/quoc-gia/au-my" to "Âu Mỹ"
+        "/api/films/phim-moi-cap-nhat" to "Phim mới cập nhật",
+        "/api/films/ngon-ngu/vietsub" to "Phim Vietsub",
+        "/api/films/ngon-ngu/thuyet-minh" to "Phim Thuyết minh",
+        "/api/films/ngon-ngu/long-tieng" to "Phim Lồng tiếng",
+        "/api/films/danh-sach/phim-dang-chieu" to "Phim đang chiếu",
+        "/api/films/danh-sach/phim-le" to "Phim lẻ",
+        "/api/films/danh-sach/phim-bo" to "Phim bộ",
+        "/api/films/danh-sach/tv-shows" to "TV Shows",
+        "/api/films/quoc-gia/han-quoc" to "Hàn Quốc",
+        "/api/films/quoc-gia/trung-quoc" to "Trung Quốc",
+        "/api/films/quoc-gia/au-my" to "Âu Mỹ"
     )
 
     // ---------- Trang chủ ----------
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
+        ensureDomain()
         val res = app.get(
-            request.data,
+            mainUrl + request.data,
             params = mapOf("page" to page.toString()),
             headers = apiHeaders
         ).parsedSafe<ListResponse>()
@@ -46,6 +73,7 @@ class ExampleProvider : MainAPI() {
 
     // ---------- Tìm kiếm ----------
     override suspend fun search(query: String): List<SearchResponse> {
+        ensureDomain()
         val res = app.get(
             "$api/films/search",
             params = mapOf("keyword" to query),
@@ -72,6 +100,7 @@ class ExampleProvider : MainAPI() {
 
     // ---------- Chi tiết phim ----------
     override suspend fun load(url: String): LoadResponse? {
+        ensureDomain()
         val slug = url.trimEnd('/').substringAfterLast("/")
         val movie = app.get("$api/film/$slug", headers = apiHeaders)
             .parsedSafe<DetailResponse>()?.movie ?: return null
@@ -95,6 +124,13 @@ class ExampleProvider : MainAPI() {
                 groupName.contains("Thể loại", true) -> tagList.addAll(names)
             }
         }
+
+        // Thêm các ngôn ngữ có sẵn vào tags (Vietsub / Thuyết minh / Lồng tiếng)
+        movie.episodes.orEmpty()
+            .map { langLabel(it.serverName) }
+            .distinct()
+            .filter { it != "Khác" }
+            .forEach { if (!tagList.contains(it)) tagList.add(it) }
 
         // Gom các server theo tên tập
         val epMap = linkedMapOf<String, MutableList<EpLink>>()
@@ -134,6 +170,17 @@ class ExampleProvider : MainAPI() {
         }
     }
 
+    // ---------- Nhận diện ngôn ngữ ----------
+    private fun langLabel(serverName: String?): String {
+        val n = (serverName ?: "").lowercase()
+        return when {
+            n.contains("thuyết minh") || n.contains("thuyet minh") -> "Thuyết minh"
+            n.contains("lồng tiếng") || n.contains("long tieng") -> "Lồng tiếng"
+            n.contains("vietsub") || n.contains("sub") -> "Vietsub"
+            else -> "Khác"
+        }
+    }
+
     // ---------- Link phát ----------
     override suspend fun loadLinks(
         data: String,
@@ -141,15 +188,19 @@ class ExampleProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
+        val order = listOf("Vietsub", "Thuyết minh", "Lồng tiếng", "Khác")
         val links = parseJson<List<EpLink>>(data)
+            .sortedBy { order.indexOf(langLabel(it.server)) }
         var found = false
 
         for (l in links) {
             val serverName = l.server?.ifBlank { null } ?: "Server"
+            val lang = langLabel(l.server)
+            val sourceName = "$name $lang"
 
             if (!l.m3u8.isNullOrBlank()) {
                 callback(
-                    newExtractorLink(name, "$name $serverName", l.m3u8, ExtractorLinkType.M3U8) {
+                    newExtractorLink(sourceName, "$sourceName • $serverName", l.m3u8, ExtractorLinkType.M3U8) {
                         this.referer = "$mainUrl/"
                         this.quality = Qualities.Unknown.value
                     }
@@ -173,7 +224,7 @@ class ExampleProvider : MainAPI() {
             if (m3u8s.isNotEmpty()) {
                 m3u8s.forEach { u ->
                     callback(
-                        newExtractorLink(name, "$name $serverName", u, ExtractorLinkType.M3U8) {
+                        newExtractorLink(sourceName, "$sourceName • $serverName", u, ExtractorLinkType.M3U8) {
                             this.referer = embed
                             this.quality = Qualities.Unknown.value
                         }
