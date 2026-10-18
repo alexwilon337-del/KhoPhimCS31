@@ -112,7 +112,7 @@ class NguonCProvider : MainAPI() {
     ): Boolean {
         val sources = parseJson<List<EpisodeData>>(data)
 
-        sources.forEach { source ->
+        for (source in sources) {
             val m3u8Url = source.m3u8
             if (!m3u8Url.isNullOrBlank()) {
                 callback.invoke(
@@ -287,7 +287,8 @@ class YanHH3DProvider : MainAPI() {
         val document = response.document
 
         val m3u8Regex = Regex("""(https?://[^\s"']+\.m3u8[^\s"']*)""")
-        m3u8Regex.findAll(html).map { it.value.replace("\\/", "/") }.distinct().forEach { m3u8Url ->
+        val m3u8List = m3u8Regex.findAll(html).map { it.value.replace("\\/", "/") }.distinct().toList()
+        for (m3u8Url in m3u8List) {
             callback.invoke(
                 newExtractorLink(
                     source = this.name,
@@ -301,9 +302,12 @@ class YanHH3DProvider : MainAPI() {
             )
         }
 
-        document.select("iframe[src]").forEach { iframe ->
-            val iframeSrc = fixUrlNull(iframe.attr("src")) ?: return@forEach
-            loadExtractor(iframeSrc, "$mainUrl/", subtitleCallback, callback)
+        val iframes = document.select("iframe[src]")
+        for (iframe in iframes) {
+            val iframeSrc = fixUrlNull(iframe.attr("src"))
+            if (!iframeSrc.isNullOrBlank()) {
+                loadExtractor(iframeSrc, "$mainUrl/", subtitleCallback, callback)
+            }
         }
 
         return true
