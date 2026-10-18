@@ -1,5 +1,5 @@
 // dùng số nguyên cho version, tăng lên mỗi lần cập nhật
-version = 2
+version = 4
 
 cloudstream {
     description = "Kho phim NguonC (Vietsub, thuyết minh)"
