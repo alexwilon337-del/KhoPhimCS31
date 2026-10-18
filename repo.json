@@ -1,0 +1,8 @@
+{
+    "name": "Kho Phim Việt",
+    "description": "Kho phim NguonC và YanHH3D",
+    "manifestVersion": 1,
+    "pluginLists": [
+      "https://raw.githubusercontent.com/alexwilon337-del/KhoPhimCS31/builds/plugins.json"
+    ]
+}
