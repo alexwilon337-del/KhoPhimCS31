@@ -9,9 +9,6 @@ import org.jsoup.nodes.Element
 import org.jsoup.select.Elements
 import java.net.URLEncoder
 
-// ============================================================================
-// KHO PHIM 1: NGUONC.COM
-// ============================================================================
 class NguonCProvider : MainAPI() {
     override var mainUrl = "https://phim.nguonc.com"
     override var name = "NguonC"
@@ -151,7 +148,7 @@ class NguonCProvider : MainAPI() {
                         type = ExtractorLinkType.M3U8
                     ) {
                         this.referer = "$mainUrl/"
-                        this.quality = Qualities.P1080.value
+                        this.quality = 1080
                     }
                 )
             }
@@ -194,9 +191,6 @@ class NguonCProvider : MainAPI() {
     )
 }
 
-// ============================================================================
-// KHO PHIM 2: YANHH3D.CHAT
-// ============================================================================
 class YanHH3DProvider : MainAPI() {
     override var mainUrl = "https://yanhh3d.chat"
     override var name = "YanHH3D"
@@ -381,7 +375,7 @@ class YanHH3DProvider : MainAPI() {
                     type = ExtractorLinkType.M3U8
                 ) {
                     this.referer = "$mainUrl/"
-                    this.quality = Qualities.P1080.value
+                    this.quality = 1080
                 }
             )
             index++
