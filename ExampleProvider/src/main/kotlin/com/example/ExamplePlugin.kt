@@ -1,14 +1,12 @@
 package com.example
 
+import android.content.Context
 import com.lagradost.cloudstream3.plugins.CloudstreamPlugin
 import com.lagradost.cloudstream3.plugins.Plugin
-import android.content.Context
 
 @CloudstreamPlugin
-class ExamplePlugin: Plugin() {
+class ExamplePlugin : Plugin() {
     override fun load(context: Context) {
-        registerMainAPI(NguonCProvider())
-        registerMainAPI(YanHH3DProvider())
+        registerMainAPI(ExampleProvider())
     }
 }
-
