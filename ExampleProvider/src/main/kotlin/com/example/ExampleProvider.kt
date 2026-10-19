@@ -9,19 +9,22 @@ import com.lagradost.cloudstream3.utils.AppUtils.toJson
 import org.jsoup.Jsoup
 
 class ExampleProvider : MainAPI() {
-    // Đổi mainUrl nếu kho phim của bạn dùng domain khác (cùng cấu trúc API /api/...)
-    override var mainUrl = "https://phim.nguonc.com"
-    override var name = "NguonC"
+    // KKPhim dùng API công khai tại phimapi.com
+    override var mainUrl = "https://phimapi.com"
+    override var name = "KKPhim"
     override var lang = "vi"
     override val hasMainPage = true
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries, TvType.Anime)
 
+    private val siteUrl = "https://kkphim.com"
+    private val imageCdn = "https://phimimg.com"
+
     // ---------- Đổi tên miền nhanh ----------
-    // Plugin tự đọc file domains.json trên GitHub của bạn (mục "nguonc").
-    // Khi trang đổi tên miền, chỉ cần sửa file đó, KHÔNG cần build lại plugin.
+    // Plugin đọc file domains.json trên GitHub (mục "kkphim").
+    // Khi API đổi tên miền, chỉ cần sửa file đó, không cần build lại.
     private val domainConfigUrl =
         "https://raw.githubusercontent.com/alexwilon337-del/KhoPhimCS31/master/domains.json"
-    private val domainConfigKey = "nguonc"
+    private val domainConfigKey = "kkphim"
     private var lastDomainCheck = 0L
 
     private suspend fun ensureDomain() {
@@ -40,35 +43,36 @@ class ExampleProvider : MainAPI() {
         }
     }
 
-    private val api get() = "$mainUrl/api"
     private val apiHeaders get() = mapOf(
         "Accept" to "application/json",
-        "Referer" to "$mainUrl/"
+        "Referer" to "$siteUrl/"
     )
 
     override val mainPage = mainPageOf(
-        "/api/films/phim-moi-cap-nhat" to "Phim mới cập nhật",
-        "/api/films/ngon-ngu/vietsub" to "Phim Vietsub",
-        "/api/films/ngon-ngu/thuyet-minh" to "Phim Thuyết minh",
-        "/api/films/ngon-ngu/long-tieng" to "Phim Lồng tiếng",
-        "/api/films/danh-sach/phim-dang-chieu" to "Phim đang chiếu",
-        "/api/films/danh-sach/phim-le" to "Phim lẻ",
-        "/api/films/danh-sach/phim-bo" to "Phim bộ",
-        "/api/films/danh-sach/tv-shows" to "TV Shows",
-        "/api/films/quoc-gia/han-quoc" to "Hàn Quốc",
-        "/api/films/quoc-gia/trung-quoc" to "Trung Quốc",
-        "/api/films/quoc-gia/au-my" to "Âu Mỹ"
+        "/danh-sach/phim-moi-cap-nhat" to "Phim mới cập nhật",
+        "/v1/api/danh-sach/phim-vietsub" to "Phim Vietsub",
+        "/v1/api/danh-sach/phim-thuyet-minh" to "Phim Thuyết minh",
+        "/v1/api/danh-sach/phim-long-tieng" to "Phim Lồng tiếng",
+        "/v1/api/danh-sach/phim-le" to "Phim lẻ",
+        "/v1/api/danh-sach/phim-bo" to "Phim bộ",
+        "/v1/api/danh-sach/hoat-hinh" to "Hoạt hình",
+        "/v1/api/danh-sach/tv-shows" to "TV Shows",
+        "/v1/api/quoc-gia/han-quoc" to "Hàn Quốc",
+        "/v1/api/quoc-gia/trung-quoc" to "Trung Quốc",
+        "/v1/api/quoc-gia/au-my" to "Âu Mỹ"
     )
 
     // ---------- Trang chủ ----------
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         ensureDomain()
+        val sep = if (request.data.contains("?")) "&" else "?"
         val res = app.get(
-            mainUrl + request.data,
-            params = mapOf("page" to page.toString()),
+            "$mainUrl${request.data}${sep}page=$page&limit=24",
             headers = apiHeaders
         ).parsedSafe<ListResponse>()
-        val list = res?.items.orEmpty().mapNotNull { toSearch(it) }
+        val items = res?.items ?: res?.data?.items
+        val cdn = res?.data?.cdn
+        val list = items.orEmpty().mapNotNull { toSearch(it, cdn) }
         return newHomePageResponse(request.name, list, hasNext = list.isNotEmpty())
     }
 
@@ -76,25 +80,39 @@ class ExampleProvider : MainAPI() {
     override suspend fun search(query: String): List<SearchResponse> {
         ensureDomain()
         val res = app.get(
-            "$api/films/search",
-            params = mapOf("keyword" to query),
+            "$mainUrl/v1/api/tim-kiem",
+            params = mapOf("keyword" to query, "limit" to "24"),
             headers = apiHeaders
         ).parsedSafe<ListResponse>()
-        return res?.items.orEmpty().mapNotNull { toSearch(it) }
+        val items = res?.items ?: res?.data?.items
+        val cdn = res?.data?.cdn
+        return items.orEmpty().mapNotNull { toSearch(it, cdn) }
     }
 
-    private fun toSearch(item: FilmItem): SearchResponse? {
+    private fun img(path: String?, cdn: String?): String? {
+        if (path.isNullOrBlank()) return null
+        if (path.startsWith("http")) return path
+        val base = (cdn ?: imageCdn).trimEnd('/')
+        return if (path.contains("/")) "$base/${path.trimStart('/')}"
+        else "$base/uploads/movies/$path"
+    }
+
+    private fun toSearch(item: FilmItem, cdn: String?): SearchResponse? {
         val slug = item.slug ?: return null
         val title = item.name ?: return null
-        val url = "$mainUrl/phim/$slug"
-        val poster = fixUrlNull(item.thumbUrl ?: item.posterUrl)
-        return if ((item.totalEpisodes ?: 1) > 1) {
+        val url = "$siteUrl/phim/$slug"
+        val poster = img(item.thumbUrl ?: item.posterUrl, cdn)
+        val y = item.year
+        val isSeries = item.type == "series" || item.type == "hoathinh" || item.type == "tvshows"
+        return if (isSeries) {
             newTvSeriesSearchResponse(title, url, TvType.TvSeries) {
                 this.posterUrl = poster
+                this.year = y
             }
         } else {
             newMovieSearchResponse(title, url, TvType.Movie) {
                 this.posterUrl = poster
+                this.year = y
             }
         }
     }
@@ -103,31 +121,20 @@ class ExampleProvider : MainAPI() {
     override suspend fun load(url: String): LoadResponse? {
         ensureDomain()
         val slug = url.trimEnd('/').substringAfterLast("/")
-        val movie = app.get("$api/film/$slug", headers = apiHeaders)
-            .parsedSafe<DetailResponse>()?.movie ?: return null
+        val res = app.get("$mainUrl/phim/$slug", headers = apiHeaders)
+            .parsedSafe<DetailResponse>() ?: return null
+        val movie = res.movie ?: return null
 
         val title = movie.name ?: return null
-        val poster = fixUrlNull(movie.posterUrl ?: movie.thumbUrl)
-        val plotText = movie.description?.let { Jsoup.parse(it).text() }
-        val actorList = movie.casts?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() }
+        val poster = img(movie.posterUrl ?: movie.thumbUrl, null)
+        val plotText = movie.content?.let { Jsoup.parse(it).text() }
+        val actorList = movie.actor.orEmpty().map { it.trim() }.filter { it.isNotBlank() }
+        val durationMin = Regex("\\d+").find(movie.time ?: "")?.value?.toIntOrNull()
 
-        // category là map {"1": {group:{name}, list:[{name}]}, ...}
-        var yearValue: Int? = null
         val tagList = mutableListOf<String>()
-        (movie.category as? Map<*, *>)?.values?.forEach { g ->
-            val group = g as? Map<*, *> ?: return@forEach
-            val groupName = (group["group"] as? Map<*, *>)?.get("name") as? String ?: ""
-            val names = (group["list"] as? List<*>)?.mapNotNull {
-                (it as? Map<*, *>)?.get("name") as? String
-            }.orEmpty()
-            when {
-                groupName.contains("Năm", true) -> yearValue = names.firstOrNull()?.toIntOrNull()
-                groupName.contains("Thể loại", true) -> tagList.addAll(names)
-            }
-        }
+        movie.category.orEmpty().mapNotNull { it.name }.forEach { tagList.add(it) }
 
-        // Thêm các ngôn ngữ có sẵn vào tags (Vietsub / Thuyết minh / Lồng tiếng)
-        movie.episodes.orEmpty()
+        res.episodes.orEmpty()
             .map { langLabel(it.serverName) }
             .distinct()
             .filter { it != "Khác" }
@@ -135,7 +142,7 @@ class ExampleProvider : MainAPI() {
 
         // Gom các server theo tên tập
         val epMap = linkedMapOf<String, MutableList<EpLink>>()
-        movie.episodes.orEmpty().forEach { server ->
+        res.episodes.orEmpty().forEach { server ->
             server.items.orEmpty().forEach { ep ->
                 val epName = ep.name ?: return@forEach
                 epMap.getOrPut(epName) { mutableListOf() }
@@ -144,7 +151,7 @@ class ExampleProvider : MainAPI() {
         }
         if (epMap.isEmpty()) return null
 
-        val isSeries = epMap.size > 1 || (movie.totalEpisodes ?: 1) > 1
+        val isSeries = epMap.size > 1 || movie.type == "series" || movie.type == "tvshows"
 
         return if (isSeries) {
             val episodes = epMap.map { (epName, links) ->
@@ -156,16 +163,18 @@ class ExampleProvider : MainAPI() {
             newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
                 this.posterUrl = poster
                 this.plot = plotText
-                this.year = yearValue
+                this.year = movie.year
                 this.tags = tagList
+                this.duration = durationMin
                 addActors(actorList)
             }
         } else {
             newMovieLoadResponse(title, url, TvType.Movie, epMap.values.first().toJson()) {
                 this.posterUrl = poster
                 this.plot = plotText
-                this.year = yearValue
+                this.year = movie.year
                 this.tags = tagList
+                this.duration = durationMin
                 addActors(actorList)
             }
         }
@@ -202,7 +211,7 @@ class ExampleProvider : MainAPI() {
             if (!l.m3u8.isNullOrBlank()) {
                 callback(
                     newExtractorLink(sourceName, "$sourceName • $serverName", l.m3u8, ExtractorLinkType.M3U8) {
-                        this.referer = "$mainUrl/"
+                        this.referer = "$siteUrl/"
                         this.quality = Qualities.Unknown.value
                     }
                 )
@@ -213,9 +222,22 @@ class ExampleProvider : MainAPI() {
             val embed = l.embed
             if (embed.isNullOrBlank()) continue
 
-            // Thử tìm m3u8 ngay trong trang embed
+            // Nhiều trình phát nhúng truyền sẵn link m3u8 qua tham số ?url=
+            val fromParam = Regex("""[?&]url=([^&]+)""").find(embed)?.groupValues?.get(1)
+                ?.let { java.net.URLDecoder.decode(it, "UTF-8") }
+            if (fromParam != null && fromParam.contains(".m3u8")) {
+                callback(
+                    newExtractorLink(sourceName, "$sourceName • $serverName", fromParam, ExtractorLinkType.M3U8) {
+                        this.referer = "$siteUrl/"
+                        this.quality = Qualities.Unknown.value
+                    }
+                )
+                found = true
+                continue
+            }
+
             val html = try {
-                app.get(embed, referer = "$mainUrl/").text.replace("\\/", "/")
+                app.get(embed, referer = "$siteUrl/").text.replace("\\/", "/")
             } catch (e: Exception) {
                 ""
             }
@@ -232,7 +254,7 @@ class ExampleProvider : MainAPI() {
                     )
                 }
                 found = true
-            } else if (loadExtractor(embed, "$mainUrl/", subtitleCallback, callback)) {
+            } else if (loadExtractor(embed, "$siteUrl/", subtitleCallback, callback)) {
                 found = true
             }
         }
@@ -241,7 +263,13 @@ class ExampleProvider : MainAPI() {
 
     // ---------- Model JSON ----------
     data class ListResponse(
-        @JsonProperty("items") val items: List<FilmItem>? = null
+        @JsonProperty("items") val items: List<FilmItem>? = null,
+        @JsonProperty("data") val data: ListData? = null
+    )
+
+    data class ListData(
+        @JsonProperty("items") val items: List<FilmItem>? = null,
+        @JsonProperty("APP_DOMAIN_CDN_IMAGE") val cdn: String? = null
     )
 
     data class FilmItem(
@@ -249,34 +277,41 @@ class ExampleProvider : MainAPI() {
         @JsonProperty("slug") val slug: String? = null,
         @JsonProperty("thumb_url") val thumbUrl: String? = null,
         @JsonProperty("poster_url") val posterUrl: String? = null,
-        @JsonProperty("total_episodes") val totalEpisodes: Int? = null
+        @JsonProperty("year") val year: Int? = null,
+        @JsonProperty("type") val type: String? = null
     )
 
     data class DetailResponse(
-        @JsonProperty("movie") val movie: MovieDetail? = null
+        @JsonProperty("movie") val movie: MovieDetail? = null,
+        @JsonProperty("episodes") val episodes: List<ServerData>? = null
+    )
+
+    data class NameItem(
+        @JsonProperty("name") val name: String? = null
     )
 
     data class MovieDetail(
         @JsonProperty("name") val name: String? = null,
         @JsonProperty("slug") val slug: String? = null,
+        @JsonProperty("content") val content: String? = null,
+        @JsonProperty("type") val type: String? = null,
         @JsonProperty("thumb_url") val thumbUrl: String? = null,
         @JsonProperty("poster_url") val posterUrl: String? = null,
-        @JsonProperty("description") val description: String? = null,
-        @JsonProperty("total_episodes") val totalEpisodes: Int? = null,
-        @JsonProperty("casts") val casts: String? = null,
-        @JsonProperty("category") val category: Any? = null,
-        @JsonProperty("episodes") val episodes: List<ServerData>? = null
+        @JsonProperty("time") val time: String? = null,
+        @JsonProperty("year") val year: Int? = null,
+        @JsonProperty("actor") val actor: List<String>? = null,
+        @JsonProperty("category") val category: List<NameItem>? = null
     )
 
     data class ServerData(
         @JsonProperty("server_name") val serverName: String? = null,
-        @JsonProperty("items") val items: List<EpItem>? = null
+        @JsonProperty("server_data") val items: List<EpItem>? = null
     )
 
     data class EpItem(
         @JsonProperty("name") val name: String? = null,
-        @JsonProperty("embed") val embed: String? = null,
-        @JsonProperty("m3u8") val m3u8: String? = null
+        @JsonProperty("link_embed") val embed: String? = null,
+        @JsonProperty("link_m3u8") val m3u8: String? = null
     )
 
     data class EpLink(
