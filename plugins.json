@@ -1,5 +1,26 @@
 [
     {
+        "fileHash": "sha256-41ea19a658822b303d63b3aa9cfff19163d244bbd05782a0ebe1a33a4bfba087",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/alexwilon337-del/KhoPhimCS31",
+        "fileSize": 26048,
+        "status": 1,
+        "language": "vi",
+        "authors": [
+            "alexwilon337-del"
+        ],
+        "tvTypes": [
+            "Movie",
+            "TvSeries",
+            "Anime"
+        ],
+        "version": 1,
+        "internalName": "ChoPhim",
+        "description": "Kho phim ChoPhim (Vietsub, thuy\u1ebft minh)",
+        "url": "https://raw.githubusercontent.com/alexwilon337-del/KhoPhimCS31/builds/ChoPhim.cs3",
+        "name": "ChoPhim"
+    },
+    {
         "fileHash": "sha256-65bbbea56df9bdea24f6721ad6ec484bc5a47da30c8ddffdfeb0900960a7f264",
         "apiVersion": 1,
         "repositoryUrl": "https://github.com/alexwilon337-del/KhoPhimCS31",
