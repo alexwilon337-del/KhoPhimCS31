@@ -7,7 +7,8 @@ import com.lagradost.cloudstream3.plugins.Plugin
 @CloudstreamPlugin
 class ExamplePlugin : Plugin() {
     override fun load(context: Context) {
-        registerMainAPI(ExampleProvider("Vietsub"))
-        registerMainAPI(ExampleProvider("Thuyết minh"))
+        // Hai nguồn riêng, mỗi nguồn một tên (KKPhim Vietsub / KKPhim Thuyết minh)
+        registerMainAPI(ExampleProvider("vietsub"))
+        registerMainAPI(ExampleProvider("thuyetminh"))
     }
 }
