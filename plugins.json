@@ -21,10 +21,10 @@
         "name": "ChoPhim"
     },
     {
-        "fileHash": "sha256-8ff58aa0740cc1c2ce0a888527441871884f39a3dab325fe11b48cbde5030e90",
+        "fileHash": "sha256-dfffdd6d65b2e3dae8bb963f8819e0b2d9cb45af569aeb4dcf9d0e2af4d00bb4",
         "apiVersion": 1,
         "repositoryUrl": "https://github.com/alexwilon337-del/KhoPhimCS31",
-        "fileSize": 28044,
+        "fileSize": 28584,
         "status": 1,
         "language": "vi",
         "authors": [
@@ -35,9 +35,9 @@
             "TvSeries",
             "Anime"
         ],
-        "version": 5,
+        "version": 6,
         "internalName": "ExampleProvider",
-        "description": "Kho phim KKPhim (Vietsub, thuy\u1ebft minh, l\u1ed3ng ti\u1ebfng)",
+        "description": "Kho phim KKPhim: 2 ngu\u1ed3n Vietsub v\u00e0 Thuy\u1ebft minh",
         "url": "https://raw.githubusercontent.com/alexwilon337-del/KhoPhimCS31/builds/ExampleProvider.cs3",
         "name": "ExampleProvider"
     }
