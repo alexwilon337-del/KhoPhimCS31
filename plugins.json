@@ -1,9 +1,9 @@
 [
     {
-        "fileHash": "sha256-019dfd6777f82719581e40f616ab75a81a5dba3e0c45784c69d4ca0a65276f50",
+        "fileHash": "sha256-65bbbea56df9bdea24f6721ad6ec484bc5a47da30c8ddffdfeb0900960a7f264",
         "apiVersion": 1,
         "repositoryUrl": "https://github.com/alexwilon337-del/KhoPhimCS31",
-        "fileSize": 22905,
+        "fileSize": 26052,
         "status": 1,
         "language": "vi",
         "authors": [
@@ -14,7 +14,7 @@
             "TvSeries",
             "Anime"
         ],
-        "version": 2,
+        "version": 4,
         "internalName": "ExampleProvider",
         "description": "Kho phim NguonC (Vietsub, thuy\u1ebft minh)",
         "url": "https://raw.githubusercontent.com/alexwilon337-del/KhoPhimCS31/builds/ExampleProvider.cs3",
