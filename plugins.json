@@ -1,0 +1,67 @@
+[
+    {
+        "fileHash": "sha256-36682827f1be234c5b5d3bd5f206babbd6798773b5b8f185292efb592d13dba4",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/alexwilon337-del/KhoPhimCS31",
+        "fileSize": 28513,
+        "status": 1,
+        "language": "vi",
+        "authors": [
+            "alexwilon337-del"
+        ],
+        "tvTypes": [
+            "Movie",
+            "TvSeries",
+            "Anime"
+        ],
+        "version": 1,
+        "internalName": "ChoPhim",
+        "description": "Kho phim ChoPhim (Vietsub, thuy\u1ebft minh)",
+        "url": "https://raw.githubusercontent.com/alexwilon337-del/KhoPhimCS31/builds/ChoPhim.cs3",
+        "name": "ChoPhim"
+    },
+    {
+        "fileHash": "sha256-30a413ab66c9d4dbe1c4a606f94a0f1106c03ce97ba952c8b1b590f66958c986",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/alexwilon337-del/KhoPhimCS31",
+        "fileSize": 31668,
+        "status": 1,
+        "language": "vi",
+        "authors": [
+            "alexwilon337-del"
+        ],
+        "tvTypes": [
+            "Movie",
+            "TvSeries",
+            "Anime"
+        ],
+        "version": 6,
+        "internalName": "ExampleProvider",
+        "description": "Kho phim KKPhim: 2 ngu\u1ed3n Vietsub v\u00e0 Thuy\u1ebft minh",
+        "url": "https://raw.githubusercontent.com/alexwilon337-del/KhoPhimCS31/builds/ExampleProvider.cs3",
+        "name": "ExampleProvider"
+    },
+    {
+        "iconUrl": "https://www.google.com/s2/favicons?domain=phim.nguonc.com&sz=128",
+        "fileHash": "sha256-dfe7e370637f709cc2cca185549912c014cc6e28ee5e9f0d107d9a0feb4f7011",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/alexwilon337-del/KhoPhimCS31",
+        "fileSize": 22212,
+        "status": 1,
+        "language": "vi",
+        "authors": [
+            "Hau"
+        ],
+        "tvTypes": [
+            "Movie",
+            "TvSeries",
+            "Anime",
+            "AsianDrama"
+        ],
+        "version": 1,
+        "internalName": "NguonC",
+        "description": "Ngu\u1ed3n C (phim.nguonc.com): phim l\u1ebb, phim b\u1ed9, ho\u1ea1t h\u00ecnh, Vietsub v\u00e0 Thuy\u1ebft minh",
+        "url": "https://raw.githubusercontent.com/alexwilon337-del/KhoPhimCS31/builds/NguonC.cs3",
+        "name": "NguonC"
+    }
+]
