@@ -21,10 +21,10 @@
         "name": "ChoPhim"
     },
     {
-        "fileHash": "sha256-65bbbea56df9bdea24f6721ad6ec484bc5a47da30c8ddffdfeb0900960a7f264",
+        "fileHash": "sha256-061f54e790e96533f532faa0f01279493c29a66575a7bc15874b7c7dd8b4f4bc",
         "apiVersion": 1,
         "repositoryUrl": "https://github.com/alexwilon337-del/KhoPhimCS31",
-        "fileSize": 26052,
+        "fileSize": 28044,
         "status": 1,
         "language": "vi",
         "authors": [
