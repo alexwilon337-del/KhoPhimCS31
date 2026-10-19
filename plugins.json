@@ -21,7 +21,7 @@
         "name": "ChoPhim"
     },
     {
-        "fileHash": "sha256-061f54e790e96533f532faa0f01279493c29a66575a7bc15874b7c7dd8b4f4bc",
+        "fileHash": "sha256-8ff58aa0740cc1c2ce0a888527441871884f39a3dab325fe11b48cbde5030e90",
         "apiVersion": 1,
         "repositoryUrl": "https://github.com/alexwilon337-del/KhoPhimCS31",
         "fileSize": 28044,
@@ -35,9 +35,9 @@
             "TvSeries",
             "Anime"
         ],
-        "version": 4,
+        "version": 5,
         "internalName": "ExampleProvider",
-        "description": "Kho phim NguonC (Vietsub, thuy\u1ebft minh)",
+        "description": "Kho phim KKPhim (Vietsub, thuy\u1ebft minh, l\u1ed3ng ti\u1ebfng)",
         "url": "https://raw.githubusercontent.com/alexwilon337-del/KhoPhimCS31/builds/ExampleProvider.cs3",
         "name": "ExampleProvider"
     }
