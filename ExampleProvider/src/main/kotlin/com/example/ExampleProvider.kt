@@ -8,10 +8,13 @@ import com.lagradost.cloudstream3.utils.AppUtils.parseJson
 import com.lagradost.cloudstream3.utils.AppUtils.toJson
 import org.jsoup.Jsoup
 
-class ExampleProvider : MainAPI() {
+// mode = "vietsub" hoặc "thuyetminh": mỗi chế độ là một nguồn riêng trong app
+class ExampleProvider(private val mode: String = "vietsub") : MainAPI() {
+    private val isDub = mode == "thuyetminh"
+
     // KKPhim dùng API công khai tại phimapi.com
     override var mainUrl = "https://phimapi.com"
-    override var name = "KKPhim"
+    override var name = if (isDub) "KKPhim Thuyết minh" else "KKPhim Vietsub"
     override var lang = "vi"
     override val hasMainPage = true
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries, TvType.Anime)
@@ -48,18 +51,26 @@ class ExampleProvider : MainAPI() {
         "Referer" to "$siteUrl/"
     )
 
-    override val mainPage = mainPageOf(
+    override val mainPage = if (isDub) mainPageOf(
+        "/v1/api/danh-sach/phim-thuyet-minh" to "Thuyết minh mới",
+        "/v1/api/danh-sach/phim-long-tieng" to "Lồng tiếng mới",
+        "/v1/api/danh-sach/phim-le?sort_lang=thuyet-minh" to "Phim lẻ",
+        "/v1/api/danh-sach/phim-bo?sort_lang=thuyet-minh" to "Phim bộ",
+        "/v1/api/danh-sach/hoat-hinh?sort_lang=thuyet-minh" to "Hoạt hình",
+        "/v1/api/danh-sach/tv-shows?sort_lang=thuyet-minh" to "TV Shows",
+        "/v1/api/quoc-gia/han-quoc?sort_lang=thuyet-minh" to "Hàn Quốc",
+        "/v1/api/quoc-gia/trung-quoc?sort_lang=thuyet-minh" to "Trung Quốc",
+        "/v1/api/quoc-gia/au-my?sort_lang=thuyet-minh" to "Âu Mỹ"
+    ) else mainPageOf(
+        "/v1/api/danh-sach/phim-vietsub" to "Vietsub mới",
         "/danh-sach/phim-moi-cap-nhat" to "Phim mới cập nhật",
-        "/v1/api/danh-sach/phim-vietsub" to "Phim Vietsub",
-        "/v1/api/danh-sach/phim-thuyet-minh" to "Phim Thuyết minh",
-        "/v1/api/danh-sach/phim-long-tieng" to "Phim Lồng tiếng",
-        "/v1/api/danh-sach/phim-le" to "Phim lẻ",
-        "/v1/api/danh-sach/phim-bo" to "Phim bộ",
-        "/v1/api/danh-sach/hoat-hinh" to "Hoạt hình",
-        "/v1/api/danh-sach/tv-shows" to "TV Shows",
-        "/v1/api/quoc-gia/han-quoc" to "Hàn Quốc",
-        "/v1/api/quoc-gia/trung-quoc" to "Trung Quốc",
-        "/v1/api/quoc-gia/au-my" to "Âu Mỹ"
+        "/v1/api/danh-sach/phim-le?sort_lang=vietsub" to "Phim lẻ",
+        "/v1/api/danh-sach/phim-bo?sort_lang=vietsub" to "Phim bộ",
+        "/v1/api/danh-sach/hoat-hinh?sort_lang=vietsub" to "Hoạt hình",
+        "/v1/api/danh-sach/tv-shows?sort_lang=vietsub" to "TV Shows",
+        "/v1/api/quoc-gia/han-quoc?sort_lang=vietsub" to "Hàn Quốc",
+        "/v1/api/quoc-gia/trung-quoc?sort_lang=vietsub" to "Trung Quốc",
+        "/v1/api/quoc-gia/au-my?sort_lang=vietsub" to "Âu Mỹ"
     )
 
     // ---------- Trang chủ ----------
@@ -131,10 +142,14 @@ class ExampleProvider : MainAPI() {
         val actorList = movie.actor.orEmpty().map { it.trim() }.filter { it.isNotBlank() }
         val durationMin = Regex("\\d+").find(movie.time ?: "")?.value?.toIntOrNull()
 
+        val allServers = res.episodes.orEmpty()
+        val keptServers = allServers.filter { keepServer(it.serverName) }
+        val servers = if (keptServers.isNotEmpty()) keptServers else allServers
+
         val tagList = mutableListOf<String>()
         movie.category.orEmpty().mapNotNull { it.name }.forEach { tagList.add(it) }
 
-        res.episodes.orEmpty()
+        servers
             .map { langLabel(it.serverName) }
             .distinct()
             .filter { it != "Khác" }
@@ -142,7 +157,7 @@ class ExampleProvider : MainAPI() {
 
         // Gom các server theo tên tập
         val epMap = linkedMapOf<String, MutableList<EpLink>>()
-        res.episodes.orEmpty().forEach { server ->
+        servers.forEach { server ->
             server.items.orEmpty().forEach { ep ->
                 val epName = ep.name ?: return@forEach
                 epMap.getOrPut(epName) { mutableListOf() }
@@ -180,6 +195,13 @@ class ExampleProvider : MainAPI() {
         }
     }
 
+    // Vietsub: giữ server Vietsub (và server chưa rõ ngôn ngữ). Thuyết minh: giữ Thuyết minh + Lồng tiếng
+    private fun keepServer(serverName: String?): Boolean {
+        val l = langLabel(serverName)
+        return if (isDub) l == "Thuyết minh" || l == "Lồng tiếng"
+        else l == "Vietsub" || l == "Khác"
+    }
+
     // ---------- Nhận diện ngôn ngữ ----------
     private fun langLabel(serverName: String?): String {
         val n = (serverName ?: "").lowercase()
@@ -206,7 +228,7 @@ class ExampleProvider : MainAPI() {
         for (l in links) {
             val serverName = l.server?.ifBlank { null } ?: "Server"
             val lang = langLabel(l.server)
-            val sourceName = "$name $lang"
+            val sourceName = name
 
             if (!l.m3u8.isNullOrBlank()) {
                 callback(
