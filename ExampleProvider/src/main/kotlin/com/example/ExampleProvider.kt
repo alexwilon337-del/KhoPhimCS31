@@ -10,10 +10,7 @@ import org.jsoup.Jsoup
 
 // mode = "vietsub" hoặc "thuyetminh": mỗi chế độ là một nguồn riêng trong app
 class ExampleProvider(private val mode: String = "vietsub") : MainAPI() {
-    // Nhận diện linh hoạt: "thuyetminh", "Thuyết minh", "dub"... đều tính là thuyết minh
-    private val isDub = mode.lowercase().let {
-        it.contains("thuyet") || it.contains("thuyết") || it.contains("dub")
-    }
+    private val isDub = mode == "thuyetminh"
 
     // KKPhim dùng API công khai tại phimapi.com
     override var mainUrl = "https://phimapi.com"
@@ -27,7 +24,6 @@ class ExampleProvider(private val mode: String = "vietsub") : MainAPI() {
 
     // ---------- Đổi tên miền nhanh ----------
     // Plugin đọc file domains.json trên GitHub (mục "kkphim").
-    // Giá trị phải là domain API (ví dụ https://phimapi.com), không phải domain web.
     // Khi API đổi tên miền, chỉ cần sửa file đó, không cần build lại.
     private val domainConfigUrl =
         "https://raw.githubusercontent.com/alexwilon337-del/KhoPhimCS31/master/domains.json"
@@ -37,14 +33,13 @@ class ExampleProvider(private val mode: String = "vietsub") : MainAPI() {
     private suspend fun ensureDomain() {
         val now = System.currentTimeMillis()
         if (lastDomainCheck != 0L && now - lastDomainCheck < 10 * 60 * 1000L) return
-        // Đánh dấu đã kiểm tra ngay, để lỗi mạng không làm app thử lại ở mỗi lần bấm
-        lastDomainCheck = now
         try {
             val cfg = app.get("$domainConfigUrl?t=$now", timeout = 10L)
                 .parsedSafe<Map<String, String>>()
             val d = cfg?.get(domainConfigKey)?.trim()?.trimEnd('/')
             if (!d.isNullOrBlank() && d.startsWith("http")) {
                 mainUrl = d
+                lastDomainCheck = now
             }
         } catch (e: Exception) {
             // Không đọc được thì dùng tên miền hiện tại
@@ -118,17 +113,14 @@ class ExampleProvider(private val mode: String = "vietsub") : MainAPI() {
         val title = item.name ?: return null
         val url = "$siteUrl/phim/$slug"
         val poster = img(item.thumbUrl ?: item.posterUrl, cdn)
-        val y = item.year
         val isSeries = item.type == "series" || item.type == "hoathinh" || item.type == "tvshows"
         return if (isSeries) {
             newTvSeriesSearchResponse(title, url, TvType.TvSeries) {
                 this.posterUrl = poster
-                this.year = y
             }
         } else {
             newMovieSearchResponse(title, url, TvType.Movie) {
                 this.posterUrl = poster
-                this.year = y
             }
         }
     }
@@ -209,10 +201,7 @@ class ExampleProvider(private val mode: String = "vietsub") : MainAPI() {
 
     // ---------- Nhận diện ngôn ngữ ----------
     private fun langLabel(serverName: String?): String {
-        // Chuẩn hóa Unicode (NFC) để dấu tiếng Việt luôn so khớp đúng
-        val n = java.text.Normalizer
-            .normalize(serverName ?: "", java.text.Normalizer.Form.NFC)
-            .lowercase()
+        val n = (serverName ?: "").lowercase()
         return when {
             n.contains("thuyết minh") || n.contains("thuyet minh") -> "Thuyết minh"
             n.contains("lồng tiếng") || n.contains("long tieng") -> "Lồng tiếng"
@@ -235,6 +224,7 @@ class ExampleProvider(private val mode: String = "vietsub") : MainAPI() {
 
         for (l in links) {
             val serverName = l.server?.ifBlank { null } ?: "Server"
+            val lang = langLabel(l.server)
             val sourceName = name
 
             if (!l.m3u8.isNullOrBlank()) {
