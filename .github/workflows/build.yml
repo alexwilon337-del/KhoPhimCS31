@@ -38,6 +38,9 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # Gói "tools" mặc định đã bị Google gỡ nên sdkmanager báo lỗi, chỉ cài platform-tools
+          packages: 'platform-tools'
 
       - name: Build Plugins
         run: |
