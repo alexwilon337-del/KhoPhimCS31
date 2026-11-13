@@ -1,333 +1,299 @@
 package com.hh3d
 
-import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
 import com.lagradost.cloudstream3.utils.*
-import com.lagradost.cloudstream3.utils.AppUtils.parseJson
-import com.lagradost.cloudstream3.utils.AppUtils.toJson
-import org.jsoup.Jsoup
+import org.json.JSONArray
+import org.json.JSONObject
+import java.net.URLEncoder
 
-// mode = "vietsub" hoặc "thuyetminh": mỗi chế độ là một nguồn riêng trong app
-class HH3DProvider(private val mode: String = "vietsub") : MainAPI() {
-    private val isDub = mode == "thuyetminh"
+// HH3D = Hoạt hình Trung Quốc 3D.
+// Dữ liệu lấy từ API công khai của KKPhim (phimapi.com): có link .m3u8 trực tiếp,
+// và tách sẵn bản Vietsub / Thuyết minh theo tên server.
+class HH3DProvider : MainAPI() {
 
-    // HH3D: hoạt hình 3D Trung Quốc, lấy dữ liệu từ API công khai phimapi.com (cùng nguồn KKPhim)
-    override var mainUrl = "https://phimapi.com"
-    override var name = if (isDub) "HH3D Thuyết minh" else "HH3D Vietsub"
+    companion object {
+        // Nếu sau này API đổi tên miền thì chỉ cần sửa 2 dòng này
+        const val API = "https://phimapi.com"
+        const val IMG_CDN = "https://phimimg.com"
+    }
+
+    override var mainUrl = API
+    override var name = "HH3D"
     override var lang = "vi"
     override val hasMainPage = true
-    override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries, TvType.Anime)
+    override val supportedTypes = setOf(
+        TvType.Anime,
+        TvType.Cartoon,
+        TvType.TvSeries,
+        TvType.Movie
+    )
 
-    private val siteUrl = "https://kkphim.com"
-    private val imageCdn = "https://phimimg.com"
+    private val listBase =
+        "/v1/api/danh-sach/hoat-hinh?country=trung-quoc&sort_field=modified.time&sort_type=desc"
 
-    // ---------- Đổi tên miền nhanh ----------
-    // Plugin đọc file domains.json trên GitHub (mục "hh3d").
-    // Khi API đổi tên miền, chỉ cần sửa file đó, không cần build lại.
-    private val domainConfigUrl =
-        "https://raw.githubusercontent.com/alexwilon337-del/KhoPhimCS31/master/domains.json"
-    private val domainConfigKey = "hh3d"
-    private var lastDomainCheck = 0L
+    // Các hàng ở trang chủ: "đường dẫn API" to "tên hàng"
+    override val mainPage = mainPageOf(
+        listBase to "Hoạt hình TQ mới cập nhật",
+        "$listBase&sort_lang=thuyet-minh" to "Hoạt hình TQ thuyết minh",
+        "$listBase&sort_lang=vietsub" to "Hoạt hình TQ vietsub",
+        "$listBase&sort_lang=long-tieng" to "Hoạt hình TQ lồng tiếng"
+    )
 
-    private suspend fun ensureDomain() {
-        val now = System.currentTimeMillis()
-        if (lastDomainCheck != 0L && now - lastDomainCheck < 10 * 60 * 1000L) return
-        try {
-            val cfg = app.get("$domainConfigUrl?t=$now", timeout = 10L)
-                .parsedSafe<Map<String, String>>()
-            val d = cfg?.get(domainConfigKey)?.trim()?.trimEnd('/')
-            if (!d.isNullOrBlank() && d.startsWith("http")) {
-                mainUrl = d
-                lastDomainCheck = now
-            }
+    private val apiHeaders = mapOf(
+        "User-Agent" to "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 " +
+            "(KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
+        "Accept" to "application/json"
+    )
+
+    // Từ khóa để phân biệt "Thuyết minh / Lồng tiếng" (dub) và "Vietsub" (sub)
+    private val dubWords = listOf(
+        "thuyết minh", "thuyet minh", "thuyetminh", "lồng tiếng", "long tieng", "dubbed"
+    )
+    private val subWords = listOf(
+        "vietsub", "viet sub", "phụ đề", "phu de", "subbed"
+    )
+
+    // ---------- Hàm phụ ----------
+
+    // Đọc chuỗi từ JSON, trả về null nếu rỗng hoặc là null
+    private fun JSONObject.str(key: String): String? {
+        if (isNull(key)) return null
+        return optString(key).trim().takeIf { it.isNotEmpty() }
+    }
+
+    // Gọi API, lỗi thì trả về null (không làm sập app)
+    private suspend fun apiGet(path: String): JSONObject? {
+        return try {
+            JSONObject(app.get(API + path, headers = apiHeaders).text)
         } catch (e: Exception) {
-            // Không đọc được thì dùng tên miền hiện tại
+            null
         }
     }
 
-    private val apiHeaders get() = mapOf(
-        "Accept" to "application/json",
-        "Referer" to "$siteUrl/"
-    )
+    private fun imgUrl(path: String?, cdn: String): String? {
+        if (path.isNullOrBlank()) return null
+        if (path.startsWith("http")) return path
+        return cdn.trimEnd('/') + "/" + path.trimStart('/')
+    }
 
-    override val mainPage = if (isDub) mainPageOf(
-        "/v1/api/danh-sach/hoat-hinh?country=trung-quoc&sort_lang=thuyet-minh" to "Thuyết minh mới",
-        "/v1/api/danh-sach/hoat-hinh?country=trung-quoc&sort_lang=long-tieng" to "Lồng tiếng mới",
-        "/v1/api/danh-sach/hoat-hinh?country=trung-quoc&sort_lang=thuyet-minh&year=2026" to "Thuyết minh 2026",
-        "/v1/api/danh-sach/hoat-hinh?country=trung-quoc&sort_lang=thuyet-minh&year=2025" to "Thuyết minh 2025",
-        "/v1/api/danh-sach/hoat-hinh?country=trung-quoc&sort_lang=thuyet-minh&year=2024" to "Thuyết minh 2024"
-    ) else mainPageOf(
-        "/v1/api/danh-sach/hoat-hinh?country=trung-quoc&sort_lang=vietsub" to "Vietsub mới",
-        "/v1/api/danh-sach/hoat-hinh?country=trung-quoc" to "Mới cập nhật",
-        "/v1/api/danh-sach/hoat-hinh?country=trung-quoc&sort_lang=vietsub&year=2026" to "Vietsub 2026",
-        "/v1/api/danh-sach/hoat-hinh?country=trung-quoc&sort_lang=vietsub&year=2025" to "Vietsub 2025",
-        "/v1/api/danh-sach/hoat-hinh?country=trung-quoc&sort_lang=vietsub&year=2024" to "Vietsub 2024"
-    )
+    // Đoán một đoạn chữ nói về "thuyết minh" (dub), "vietsub" (sub) hay không rõ ("")
+    private fun kindOf(text: String): String {
+        val t = text.lowercase()
+        val d = dubWords.maxOf { t.lastIndexOf(it) }
+        val s = subWords.maxOf { t.lastIndexOf(it) }
+        return when {
+            d < 0 && s < 0 -> ""
+            d > s -> "dub"
+            else -> "sub"
+        }
+    }
+
+    private fun stripHtml(s: String): String {
+        return s.replace(Regex("<[^>]*>"), "")
+            .replace("&nbsp;", " ")
+            .replace("&amp;", "&")
+            .trim()
+    }
+
+    private suspend fun toSearchResponse(item: JSONObject, cdn: String): SearchResponse? {
+        val slug = item.str("slug") ?: return null
+        val title = item.str("name") ?: return null
+        val poster = imgUrl(item.str("thumb_url") ?: item.str("poster_url"), cdn)
+
+        // Nhãn DUB / SUB + số tập hiện ngoài poster
+        val langText = (item.str("lang") ?: "").lowercase()
+        val hasDub = dubWords.any { langText.contains(it) }
+        val hasSub = subWords.any { langText.contains(it) } || !hasDub
+        val epCount = item.str("episode_current")
+            ?.let { Regex("\\d+").find(it)?.value?.toIntOrNull() }
+
+        return newAnimeSearchResponse(title, "$API/phim/$slug", TvType.Anime) {
+            this.posterUrl = poster
+            addDubStatus(
+                hasDub,
+                hasSub,
+                if (hasDub) epCount else null,
+                if (hasSub) epCount else null
+            )
+        }
+    }
+
+    private suspend fun parseItems(json: JSONObject, animationOnly: Boolean): List<SearchResponse> {
+        val root = json.optJSONObject("data") ?: json
+        val arr = root.optJSONArray("items") ?: json.optJSONArray("items") ?: return emptyList()
+        val cdn = root.str("APP_DOMAIN_CDN_IMAGE") ?: IMG_CDN
+
+        val all = ArrayList<SearchResponse>()
+        val animation = ArrayList<SearchResponse>()
+        for (i in 0 until arr.length()) {
+            val item = arr.optJSONObject(i) ?: continue
+            val res = toSearchResponse(item, cdn) ?: continue
+            all.add(res)
+            if (item.str("type") == "hoathinh") animation.add(res)
+        }
+        return if (animationOnly && animation.isNotEmpty()) animation else all
+    }
 
     // ---------- Trang chủ ----------
+
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        ensureDomain()
         val sep = if (request.data.contains("?")) "&" else "?"
-        val res = app.get(
-            "$mainUrl${request.data}${sep}page=$page&limit=24",
-            headers = apiHeaders
-        ).parsedSafe<ListResponse>()
-        val items = res?.items ?: res?.data?.items
-        val cdn = res?.data?.cdn
-        val list = items.orEmpty().mapNotNull { toSearch(it, cdn) }
-        return newHomePageResponse(request.name, list, hasNext = list.isNotEmpty())
+        val json = apiGet("${request.data}${sep}page=$page&limit=24")
+        val items = if (json != null) parseItems(json, false) else emptyList()
+
+        val root = json?.optJSONObject("data") ?: json
+        val pagination = root?.optJSONObject("params")?.optJSONObject("pagination")
+            ?: json?.optJSONObject("pagination")
+        val hasNext = if (pagination != null) {
+            pagination.optInt("currentPage", page) < pagination.optInt("totalPages", page)
+        } else {
+            items.isNotEmpty()
+        }
+        return newHomePageResponse(request.name, items, hasNext)
     }
 
     // ---------- Tìm kiếm ----------
+
     override suspend fun search(query: String): List<SearchResponse> {
-        ensureDomain()
-        val res = app.get(
-            "$mainUrl/v1/api/tim-kiem",
-            params = mapOf("keyword" to query, "limit" to "24", "country" to "trung-quoc"),
-            headers = apiHeaders
-        ).parsedSafe<ListResponse>()
-        val items = res?.items ?: res?.data?.items
-        val cdn = res?.data?.cdn
-        return items.orEmpty().mapNotNull { toSearch(it, cdn) }
+        val q = URLEncoder.encode(query, "UTF-8")
+        val json = apiGet("/v1/api/tim-kiem?keyword=$q&limit=24&page=1") ?: return emptyList()
+        return parseItems(json, true)
     }
 
-    private fun img(path: String?, cdn: String?): String? {
-        if (path.isNullOrBlank()) return null
-        if (path.startsWith("http")) return path
-        val base = (cdn ?: imageCdn).trimEnd('/')
-        return if (path.contains("/")) "$base/${path.trimStart('/')}"
-        else "$base/uploads/movies/$path"
-    }
+    // ---------- Trang chi tiết phim ----------
 
-    private fun toSearch(item: FilmItem, cdn: String?): SearchResponse? {
-        val slug = item.slug ?: return null
-        val title = item.name ?: return null
-        val url = "$siteUrl/phim/$slug"
-        val poster = img(item.thumbUrl ?: item.posterUrl, cdn)
-        val isSeries = item.type == "series" || item.type == "hoathinh" || item.type == "tvshows"
-        return if (isSeries) {
-            newTvSeriesSearchResponse(title, url, TvType.TvSeries) {
-                this.posterUrl = poster
-            }
-        } else {
-            newMovieSearchResponse(title, url, TvType.Movie) {
-                this.posterUrl = poster
-            }
-        }
-    }
-
-    // ---------- Chi tiết phim ----------
     override suspend fun load(url: String): LoadResponse? {
-        ensureDomain()
-        val slug = url.trimEnd('/').substringAfterLast("/")
-        val res = app.get("$mainUrl/phim/$slug", headers = apiHeaders)
-            .parsedSafe<DetailResponse>() ?: return null
-        val movie = res.movie ?: return null
+        val slug = url.trimEnd('/').substringAfterLast("/").substringBefore("?")
+        val json = apiGet("/phim/$slug") ?: return null
+        val movie = json.optJSONObject("movie") ?: return null
 
-        val title = movie.name ?: return null
-        val poster = img(movie.posterUrl ?: movie.thumbUrl, null)
-        val plotText = movie.content?.let { Jsoup.parse(it).text() }
-        val actorList = movie.actor.orEmpty().map { it.trim() }.filter { it.isNotBlank() }
-        val durationMin = Regex("\\d+").find(movie.time ?: "")?.value?.toIntOrNull()
+        val title = movie.str("name") ?: return null
+        val poster = imgUrl(movie.str("thumb_url") ?: movie.str("poster_url"), IMG_CDN)
+        val background = imgUrl(movie.str("poster_url"), IMG_CDN)
+        val plot = movie.str("content")?.let { stripHtml(it) }
+        val year = movie.optInt("year", 0).takeIf { it > 0 }
+        val movieLang = (movie.str("lang") ?: "").lowercase()
 
-        val allServers = res.episodes.orEmpty()
-        val keptServers = allServers.filter { keepServer(it.serverName) }
-        val servers = if (keptServers.isNotEmpty()) keptServers else allServers
-
-        val tagList = mutableListOf<String>()
-        movie.category.orEmpty().mapNotNull { it.name }.forEach { tagList.add(it) }
-
-        servers
-            .map { langLabel(it.serverName) }
-            .distinct()
-            .filter { it != "Khác" }
-            .forEach { if (!tagList.contains(it)) tagList.add(it) }
-
-        // Gom các server theo tên tập
-        val epMap = linkedMapOf<String, MutableList<EpLink>>()
-        servers.forEach { server ->
-            server.items.orEmpty().forEach { ep ->
-                val epName = ep.name ?: return@forEach
-                epMap.getOrPut(epName) { mutableListOf() }
-                    .add(EpLink(server.serverName ?: "", ep.m3u8, ep.embed))
+        // Thể loại
+        val tags = ArrayList<String>()
+        val categories = movie.optJSONArray("category")
+        if (categories != null) {
+            for (i in 0 until categories.length()) {
+                val n = categories.optJSONObject(i)?.str("name") ?: continue
+                tags.add(n)
             }
         }
-        if (epMap.isEmpty()) return null
 
-        val isSeries = epMap.size > 1 || movie.type == "series" || movie.type == "tvshows"
+        // Diễn viên
+        val actors = ArrayList<String>()
+        val actorArr = movie.optJSONArray("actor")
+        if (actorArr != null) {
+            for (i in 0 until actorArr.length()) {
+                val n = actorArr.optString(i).trim()
+                if (n.isNotEmpty() && n != "null") actors.add(n)
+            }
+        }
 
-        return if (isSeries) {
-            val episodes = epMap.map { (epName, links) ->
-                newEpisode(links.toJson()) {
-                    this.name = epName
-                    this.episode = Regex("\\d+").find(epName)?.value?.toIntOrNull()
+        // Nếu tên server không ghi rõ loại thì đoán theo ngôn ngữ của phim
+        val langHasDub = dubWords.any { movieLang.contains(it) }
+        val langHasSub = subWords.any { movieLang.contains(it) }
+        val defaultKind = if (langHasDub && !langHasSub) "dub" else "sub"
+
+        // Gom các tập: mỗi tập có thể có nhiều server, tách riêng danh sách Thuyết minh và Vietsub
+        val dubMap = LinkedHashMap<String, JSONArray>()
+        val subMap = LinkedHashMap<String, JSONArray>()
+        val servers = json.optJSONArray("episodes")
+        if (servers != null) {
+            for (s in 0 until servers.length()) {
+                val server = servers.optJSONObject(s) ?: continue
+                val serverName = server.str("server_name") ?: "Server ${s + 1}"
+                val kind = kindOf(serverName).ifEmpty { defaultKind }
+                val target = if (kind == "dub") dubMap else subMap
+                val items = server.optJSONArray("server_data") ?: continue
+                for (i in 0 until items.length()) {
+                    val ep = items.optJSONObject(i) ?: continue
+                    val epName = ep.str("name") ?: ep.str("slug") ?: "${i + 1}"
+                    val link = JSONObject()
+                    link.put("server", serverName)
+                    link.put("m3u8", ep.str("link_m3u8") ?: "")
+                    link.put("embed", ep.str("link_embed") ?: "")
+                    target.getOrPut(epName) { JSONArray() }.put(link)
                 }
             }
-            newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
-                this.posterUrl = poster
-                this.plot = plotText
-                this.year = movie.year
-                this.tags = tagList
-                this.duration = durationMin
-                addActors(actorList)
-            }
-        } else {
-            newMovieLoadResponse(title, url, TvType.Movie, epMap.values.first().toJson()) {
-                this.posterUrl = poster
-                this.plot = plotText
-                this.year = movie.year
-                this.tags = tagList
-                this.duration = durationMin
-                addActors(actorList)
-            }
+        }
+
+        val dubEpisodes = buildEpisodes(dubMap)
+        val subEpisodes = buildEpisodes(subMap)
+
+        return newAnimeLoadResponse(title, "$API/phim/$slug", TvType.Anime) {
+            this.posterUrl = poster
+            this.backgroundPosterUrl = background
+            this.plot = plot
+            this.year = year
+            this.tags = tags
+            addActors(actors)
+            if (dubEpisodes.isNotEmpty()) addEpisodes(DubStatus.Dubbed, dubEpisodes)
+            if (subEpisodes.isNotEmpty()) addEpisodes(DubStatus.Subbed, subEpisodes)
         }
     }
 
-    // Vietsub: giữ server Vietsub (và server chưa rõ ngôn ngữ). Thuyết minh: giữ Thuyết minh + Lồng tiếng
-    private fun keepServer(serverName: String?): Boolean {
-        val l = langLabel(serverName)
-        return if (isDub) l == "Thuyết minh" || l == "Lồng tiếng"
-        else l == "Vietsub" || l == "Khác"
-    }
-
-    // ---------- Nhận diện ngôn ngữ ----------
-    private fun langLabel(serverName: String?): String {
-        val n = (serverName ?: "").lowercase()
-        return when {
-            n.contains("thuyết minh") || n.contains("thuyet minh") -> "Thuyết minh"
-            n.contains("lồng tiếng") || n.contains("long tieng") -> "Lồng tiếng"
-            n.contains("vietsub") || n.contains("sub") -> "Vietsub"
-            else -> "Khác"
+    private suspend fun buildEpisodes(map: Map<String, JSONArray>): List<Episode> {
+        val list = ArrayList<Episode>()
+        for ((epName, links) in map) {
+            val number = Regex("\\d+").find(epName)?.value?.toIntOrNull()
+            val label = if (epName.all { it.isDigit() }) "Tập $epName" else epName
+            list.add(
+                newEpisode(links.toString()) {
+                    this.name = label
+                    this.episode = number
+                }
+            )
         }
+        list.sortBy { it.episode ?: Int.MAX_VALUE }
+        return list
     }
 
-    // ---------- Link phát ----------
+    // ---------- Lấy link phát ----------
+
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val order = listOf("Vietsub", "Thuyết minh", "Lồng tiếng", "Khác")
-        val links = parseJson<List<EpLink>>(data)
-            .sortedBy { order.indexOf(langLabel(it.server)) }
+        val arr = try {
+            JSONArray(data)
+        } catch (e: Exception) {
+            return false
+        }
+
         var found = false
+        for (i in 0 until arr.length()) {
+            val obj = arr.optJSONObject(i) ?: continue
+            val serverName = obj.str("server") ?: name
+            val m3u8 = obj.str("m3u8")
+            val embed = obj.str("embed")
 
-        for (l in links) {
-            val serverName = l.server?.ifBlank { null } ?: "Server"
-            val lang = langLabel(l.server)
-            val sourceName = name
-
-            if (!l.m3u8.isNullOrBlank()) {
+            if (m3u8 != null) {
                 callback(
-                    newExtractorLink(sourceName, "$sourceName • $serverName", l.m3u8, ExtractorLinkType.M3U8) {
-                        this.referer = "$siteUrl/"
+                    newExtractorLink(
+                        source = name,
+                        name = serverName,
+                        url = m3u8,
+                        type = ExtractorLinkType.M3U8
+                    ) {
+                        this.referer = "https://kkphim.com/"
                         this.quality = Qualities.Unknown.value
                     }
                 )
                 found = true
-                continue
-            }
-
-            val embed = l.embed
-            if (embed.isNullOrBlank()) continue
-
-            // Nhiều trình phát nhúng truyền sẵn link m3u8 qua tham số ?url=
-            val fromParam = Regex("""[?&]url=([^&]+)""").find(embed)?.groupValues?.get(1)
-                ?.let { java.net.URLDecoder.decode(it, "UTF-8") }
-            if (fromParam != null && fromParam.contains(".m3u8")) {
-                callback(
-                    newExtractorLink(sourceName, "$sourceName • $serverName", fromParam, ExtractorLinkType.M3U8) {
-                        this.referer = "$siteUrl/"
-                        this.quality = Qualities.Unknown.value
-                    }
-                )
-                found = true
-                continue
-            }
-
-            val html = try {
-                app.get(embed, referer = "$siteUrl/").text.replace("\\/", "/")
-            } catch (e: Exception) {
-                ""
-            }
-            val m3u8s = Regex("""https?://[^"'\s<>\\]+\.m3u8[^"'\s<>\\]*""")
-                .findAll(html).map { it.value }.distinct().toList()
-
-            if (m3u8s.isNotEmpty()) {
-                m3u8s.forEach { u ->
-                    callback(
-                        newExtractorLink(sourceName, "$sourceName • $serverName", u, ExtractorLinkType.M3U8) {
-                            this.referer = embed
-                            this.quality = Qualities.Unknown.value
-                        }
-                    )
+            } else if (embed != null) {
+                if (loadExtractor(embed, "https://kkphim.com/", subtitleCallback, callback)) {
+                    found = true
                 }
-                found = true
-            } else if (loadExtractor(embed, "$siteUrl/", subtitleCallback, callback)) {
-                found = true
             }
         }
         return found
     }
-
-    // ---------- Model JSON ----------
-    data class ListResponse(
-        @JsonProperty("items") val items: List<FilmItem>? = null,
-        @JsonProperty("data") val data: ListData? = null
-    )
-
-    data class ListData(
-        @JsonProperty("items") val items: List<FilmItem>? = null,
-        @JsonProperty("APP_DOMAIN_CDN_IMAGE") val cdn: String? = null
-    )
-
-    data class FilmItem(
-        @JsonProperty("name") val name: String? = null,
-        @JsonProperty("slug") val slug: String? = null,
-        @JsonProperty("thumb_url") val thumbUrl: String? = null,
-        @JsonProperty("poster_url") val posterUrl: String? = null,
-        @JsonProperty("year") val year: Int? = null,
-        @JsonProperty("type") val type: String? = null
-    )
-
-    data class DetailResponse(
-        @JsonProperty("movie") val movie: MovieDetail? = null,
-        @JsonProperty("episodes") val episodes: List<ServerData>? = null
-    )
-
-    data class NameItem(
-        @JsonProperty("name") val name: String? = null
-    )
-
-    data class MovieDetail(
-        @JsonProperty("name") val name: String? = null,
-        @JsonProperty("slug") val slug: String? = null,
-        @JsonProperty("content") val content: String? = null,
-        @JsonProperty("type") val type: String? = null,
-        @JsonProperty("thumb_url") val thumbUrl: String? = null,
-        @JsonProperty("poster_url") val posterUrl: String? = null,
-        @JsonProperty("time") val time: String? = null,
-        @JsonProperty("year") val year: Int? = null,
-        @JsonProperty("actor") val actor: List<String>? = null,
-        @JsonProperty("category") val category: List<NameItem>? = null
-    )
-
-    data class ServerData(
-        @JsonProperty("server_name") val serverName: String? = null,
-        @JsonProperty("server_data") val items: List<EpItem>? = null
-    )
-
-    data class EpItem(
-        @JsonProperty("name") val name: String? = null,
-        @JsonProperty("link_embed") val embed: String? = null,
-        @JsonProperty("link_m3u8") val m3u8: String? = null
-    )
-
-    data class EpLink(
-        @JsonProperty("server") val server: String? = null,
-        @JsonProperty("m3u8") val m3u8: String? = null,
-        @JsonProperty("embed") val embed: String? = null
-    )
 }
