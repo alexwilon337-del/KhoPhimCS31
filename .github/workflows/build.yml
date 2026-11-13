@@ -1,42 +1,76 @@
 name: Build
 
+concurrency:
+  group: "build"
+  cancel-in-progress: true
+
 on:
   push:
     branches:
       - master
       - main
+    paths-ignore:
+      - '*.md'
   workflow_dispatch:
-
-permissions:
-  contents: write
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+        with:
+          path: "src"
+
+      - name: Checkout builds
+        uses: actions/checkout@v5
+        with:
+          ref: "builds"
+          path: "builds"
+
+      - name: Clean old builds
+        run: rm -f $GITHUB_WORKSPACE/builds/*.cs3
 
       - name: Setup JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
-          java-version: '17'
-          distribution: 'temurin'
+          java-version: 17
+          distribution: temurin
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
 
       - name: Build Plugins
         run: |
+          cd $GITHUB_WORKSPACE/src
           chmod +x gradlew
-          ./gradlew make makePluginsJson
+          # JitPack đôi khi phải build lại plugin theo yêu cầu: lần đầu báo "Could not find",
+          # vài phút sau có. Chỉ khi gặp đúng lỗi đó mới thử lại (tối đa 4 lần, cách nhau 2 phút).
+          set -o pipefail
+          ok=0
+          extra=""
+          for i in 1 2 3 4; do
+            if ./gradlew make makePluginsJson --stacktrace $extra 2>&1 | tee /tmp/gradle.log; then
+              ok=1
+              break
+            fi
+            if ! grep -q "Could not find com.github.recloudstream" /tmp/gradle.log; then
+              echo "Không phải lỗi JitPack, dừng thử lại."
+              break
+            fi
+            echo "Lần $i: JitPack chưa sẵn sàng. Đợi 120 giây rồi thử lại..."
+            sleep 120
+            extra="--refresh-dependencies"
+          done
+          [ "$ok" = "1" ] || exit 1
+          cp */build/*.cs3 $GITHUB_WORKSPACE/builds
+          cp build/plugins.json $GITHUB_WORKSPACE/builds
 
       - name: Push builds
         run: |
-          git config --global user.email "actions@github.com"
-          git config --global user.name "GitHub Actions"
-          git clone --depth=1 --branch builds https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git builds || (mkdir builds && cd builds && git init && git checkout -b builds)
-          rm -rf builds/*
-          cp build/plugins.json builds/
-          find . -name "*.cs3" -exec cp {} builds/ \;
-          cd builds
+          cd $GITHUB_WORKSPACE/builds
+          git config --local user.email "actions@github.com"
+          git config --local user.name "GitHub Actions"
           git add .
-          git diff --quiet && git diff --staged --quiet || (git commit -m "Build plugins" && git push -u https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git builds --force)
+          git commit --amend -m "Build $GITHUB_SHA" || exit 0
+          git push --force
           
