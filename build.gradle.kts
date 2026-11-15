@@ -1,16 +1,23 @@
-import com.lagradost.cloudstream3.gradle.CloudstreamExtension
 import com.android.build.gradle.BaseExtension
+import com.lagradost.cloudstream3.gradle.CloudstreamExtension
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
 buildscript {
     repositories {
         google()
         mavenCentral()
+        // Kho JitPack chứa công cụ build của CloudStream
         maven("https://jitpack.io")
     }
 
     dependencies {
         classpath("com.android.tools.build:gradle:8.7.3")
+
+        // DÒNG ĐÃ SỬA LỖI: ghim đúng một bản cố định (81b1d424d2) thay vì "master-SNAPSHOT".
+        // "master-SNAPSHOT" = bản mới nhất, mà JitPack hiện không còn phát bản mới nhất nên build bị lỗi.
         classpath("com.github.recloudstream:gradle:81b1d424d2")
+
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.0")
     }
 }
@@ -35,7 +42,8 @@ subprojects {
     apply(plugin = "com.lagradost.cloudstream3.gradle")
 
     cloudstream {
-        setRepo(System.getenv("GITHUB_REPOSITORY") ?: "https://github.com/alexwilon337-del/KhoPhimCS31")
+        // Khi chạy trên GitHub Actions, GITHUB_REPOSITORY tự có tên repo của bạn
+        setRepo(System.getenv("GITHUB_REPOSITORY") ?: "alexwilon337-del/KhoPhimCS31")
     }
 
     android {
@@ -48,18 +56,17 @@ subprojects {
         }
 
         compileOptions {
-            sourceCompatibility = JavaVersion.VERSION_11
-            targetCompatibility = JavaVersion.VERSION_11
+            sourceCompatibility = JavaVersion.VERSION_1_8
+            targetCompatibility = JavaVersion.VERSION_1_8
         }
 
-        tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
+        tasks.withType<KotlinJvmCompile> {
             compilerOptions {
-                jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
+                jvmTarget.set(JvmTarget.JVM_1_8) // Bắt buộc
                 freeCompilerArgs.addAll(
                     "-Xno-call-assertions",
                     "-Xno-param-assertions",
-                    "-Xno-receiver-assertions",
-                    "-Xskip-metadata-version-check"
+                    "-Xno-receiver-assertions"
                 )
             }
         }
@@ -69,14 +76,15 @@ subprojects {
         val cloudstream by configurations
         val implementation by configurations
 
+        // Các lớp (class) của CloudStream để viết plugin
         cloudstream("com.lagradost:cloudstream3:pre-release")
 
-        implementation(kotlin("stdlib"))
-        implementation("com.github.Blatzar:NiceHttp:0.4.11")
-        implementation("org.jsoup:jsoup:1.18.3")
-        implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.16.1")
-        implementation("com.fasterxml.jackson.core:jackson-databind:2.16.1")
-        implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+        implementation(kotlin("stdlib")) // Các hàm cơ bản của Kotlin
+        implementation("com.github.Blatzar:NiceHttp:0.4.11") // Thư viện tải trang
+        implementation("org.jsoup:jsoup:1.18.3") // Đọc HTML
+
+        // QUAN TRỌNG: không nâng Jackson lên cao hơn 2.13.1, bản mới hơn làm hỏng máy Android cũ.
+        implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.13.1") // Đọc JSON
     }
 }
 
